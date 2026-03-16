@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+  backend:
+    build: ./backend
+    container_name: landscape_backend
+    restart: unless-stopped
+    volumes:
+      - media_data:/app/media
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings
+    expose:
+      - "8000"
+
+  frontend:
+    build: ./frontend
+    container_name: landscape_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  media_data:
