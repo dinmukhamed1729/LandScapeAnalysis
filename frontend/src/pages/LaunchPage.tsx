@@ -3,6 +3,12 @@ import axios from 'axios'
 import styles from './LaunchPage.module.css'
 
 const INDICES = ['NDVI', 'NDRE', 'GNDVI', 'EVI', 'SAVI', 'NDWI', 'CUSTOM'] as const
+
+interface PredictResult {
+  prediction: number
+  input_size: number
+  seq_len: number
+}
 type Index = typeof INDICES[number]
 
 interface Stats {
@@ -36,6 +42,12 @@ export default function LaunchPage() {
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<number | null>(null)
+
+  // LSTM prediction state
+  const [lstmInput, setLstmInput] = useState('')
+  const [lstmLoading, setLstmLoading] = useState(false)
+  const [lstmError, setLstmError] = useState('')
+  const [lstmResult, setLstmResult] = useState<PredictResult | null>(null)
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return
@@ -90,6 +102,31 @@ export default function LaunchPage() {
     } catch {
       setLoading(false)
       setError('Ошибка запуска анализа')
+    }
+  }
+
+  const handlePredict = async () => {
+    setLstmError('')
+    setLstmResult(null)
+
+    // Parse input: each line is one timestep; values separated by comma/space
+    const lines = lstmInput.trim().split('\n').filter(l => l.trim())
+    if (!lines.length) { setLstmError('Введите данные временного ряда'); return }
+
+    const sequence = lines.map(line =>
+      line.split(/[\s,;]+/).filter(Boolean).map(Number)
+    )
+    const hasNaN = sequence.some(row => row.some(isNaN))
+    if (hasNaN) { setLstmError('Все значения должны быть числами'); return }
+
+    setLstmLoading(true)
+    try {
+      const { data } = await axios.post<PredictResult>('/api/predict/', { sequence })
+      setLstmResult(data)
+    } catch (e: any) {
+      setLstmError(e?.response?.data?.error ?? 'Ошибка предсказания')
+    } finally {
+      setLstmLoading(false)
     }
   }
 
@@ -260,6 +297,58 @@ export default function LaunchPage() {
             <div className={styles.errorBox}>{job.progress}</div>
           </section>
         )}
+
+        {/* LSTM Prediction */}
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>
+            <span className={styles.step} style={{ background: '#7c3aed' }}>AI</span>
+            LSTM — Предсказание вегетационного индекса
+          </h2>
+
+          <p className={styles.lstmHint}>
+            Введите временной ряд: <strong>одна строка = один шаг</strong>.
+            Значения на шаге разделяйте запятой или пробелом.<br />
+            Пример (1 признак): <code>0.45</code> / <code>0.47</code> / <code>0.50</code>&hellip;
+            Пример (3 признака): <code>0.45, 0.12, 0.87</code>
+          </p>
+
+          <textarea
+            className={styles.lstmTextarea}
+            placeholder={'0.42\n0.45\n0.47\n0.50\n0.53'}
+            value={lstmInput}
+            onChange={e => setLstmInput(e.target.value)}
+          />
+
+          {lstmError && <div className={styles.errorBox} style={{ marginTop: 10 }}>{lstmError}</div>}
+
+          <div className={styles.launchRow} style={{ marginTop: 12 }}>
+            <button
+              className={styles.launchBtn}
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #4c1d95)' }}
+              onClick={handlePredict}
+              disabled={lstmLoading}
+            >
+              {lstmLoading
+                ? <><span className={styles.spinner} /> Вычисляется...</>
+                : <><span>⚡</span> Предсказать</>}
+            </button>
+            {lstmResult && (
+              <button className={styles.resetBtn} onClick={() => { setLstmResult(null); setLstmInput('') }}>
+                Сбросить
+              </button>
+            )}
+          </div>
+
+          {lstmResult && (
+            <div className={styles.lstmResult}>
+              <div className={styles.lstmResultLabel}>Предсказанное значение</div>
+              <div className={styles.lstmResultValue}>{lstmResult.prediction}</div>
+              <div className={styles.lstmResultMeta}>
+                window={lstmResult.seq_len} шагов · {lstmResult.input_size} признак{lstmResult.input_size === 1 ? '' : 'а'}
+              </div>
+            </div>
+          )}
+        </section>
       </main>
     </div>
   )

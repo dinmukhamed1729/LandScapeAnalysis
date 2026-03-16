@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'api',
+
 ]
 
 MIDDLEWARE = [
@@ -31,6 +32,12 @@ DATABASES = {}
 STATIC_URL = '/static/'
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [],
+    'UNAUTHENTICATED_USER': None,
+}
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'

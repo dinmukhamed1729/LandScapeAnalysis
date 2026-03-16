@@ -4,4 +4,5 @@ from . import views
 urlpatterns = [
     path('analyze/', views.AnalyzeView.as_view(), name='analyze'),
     path('status/<str:task_id>/', views.StatusView.as_view(), name='status'),
+    path('predict/', views.PredictView.as_view(), name='predict'),
 ]

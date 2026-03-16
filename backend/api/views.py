@@ -7,7 +7,7 @@ from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 # In-memory job store (use Redis/Celery in production)
 JOBS: dict = {}
@@ -169,3 +169,56 @@ class StatusView(APIView):
         if not job:
             return Response({'error': 'Задача не найдена'}, status=status.HTTP_404_NOT_FOUND)
         return Response(job)
+
+
+class PredictView(APIView):
+    """Run LSTM inference on a time-series window.
+
+    Request body (JSON):
+        {
+            "sequence": [[f1, f2, ...], [f1, f2, ...], ...]  // T × F  (or [[v], ...] for 1-feature)
+        }
+
+    Response:
+        { "prediction": float, "input_size": int, "seq_len": int }
+    """
+    parser_classes = [JSONParser]
+
+    def post(self, request):
+        import torch
+        from .lstm_model import get_model
+
+        sequence = request.data.get('sequence')
+        if sequence is None:
+            return Response({'error': 'Поле "sequence" обязательно'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Accept flat list [v1, v2, ...] → reshape to [[v1], [v2], ...]
+            if sequence and not isinstance(sequence[0], list):
+                sequence = [[v] for v in sequence]
+
+            x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)  # [1, T, F]
+        except (TypeError, ValueError) as exc:
+            return Response({'error': f'Неверный формат sequence: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            model, meta = get_model()
+        except FileNotFoundError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        expected_f = meta['input_size']
+        actual_f = x.shape[2]
+        if actual_f != expected_f:
+            return Response(
+                {'error': f'Модель ожидает {expected_f} признак(ов) на шаг, получено {actual_f}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with torch.no_grad():
+            pred = model(x)  # [1]
+
+        return Response({
+            'prediction': round(float(pred[0].item()), 6),
+            'input_size': expected_f,
+            'seq_len': x.shape[1],
+        })

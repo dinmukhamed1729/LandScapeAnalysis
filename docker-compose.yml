@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     volumes:
       - media_data:/app/media
+      - ./lstm_window_check_datas_14_03_2026_2.pt:/app/lstm_model.pt:ro
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings
     expose:
